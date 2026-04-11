@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"strings"
 )
@@ -11,37 +12,31 @@ import (
 func main() {
 	file, err := os.Open("messages.txt")
 	if err != nil {
-		panic(err)
+		log.Fatalf("error opening messages.txt: %s\n", err)
 	}
 	defer file.Close()
 
-	buff := make([]byte, 8)
 	var currentLine string
-
 	for {
-		n, err := io.ReadFull(file, buff)
-		if n > 0 {
-			b := string(buff[:n])
-			if strings.Contains(b, "\n") {
-				parts := strings.Split(b, "\n")
-				for i := 0; i < len(parts)-1; i++ {
-					fmt.Printf("read: %s\n", currentLine+parts[i])
-				}
-				currentLine = parts[len(parts)-1]
-			} else {
-				currentLine += b
+		buffer := make([]byte, 8, 8)
+		n, err := file.Read(buffer)
+		if err != nil {
+			if currentLine != "" {
+				fmt.Printf("read: %s\n", currentLine)
+				currentLine = ""
 			}
-		}
-
-		if err == io.EOF || errors.Is(err, io.ErrUnexpectedEOF) {
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			fmt.Printf("error: %s\n", err.Error())
 			break
 		}
-		if err != nil {
-			panic(err)
+		str := string(buffer[:n])
+		parts := strings.Split(str, "\n")
+		for i := 0; i < len(parts)-1; i++ {
+			fmt.Printf("read: %s\n", currentLine+parts[i])
+			currentLine = ""
 		}
-	}
-
-	if currentLine != "" {
-		fmt.Printf("read: %s\n", currentLine)
+		currentLine += parts[len(parts)-1]
 	}
 }
