@@ -25,17 +25,53 @@ const (
 	done
 )
 
+const bufferSize = 8
+
 func RequestFromReader(reader io.Reader) (*Request, error) {
-	req := &Request{}
-	data, err := io.ReadAll(reader)
-	if err != nil {
-		return nil, err
+	buf := make([]byte, bufferSize)
+	readToIndex := 0
+
+	req := &Request{
+		parseState: initialized,
 	}
-	reqLine, _, err := parseRequestLine(string(data))
-	if err != nil {
-		return nil, err
+
+	for req.parseState != done {
+		if readToIndex == len(buf) {
+			newSize := len(buf) * 2
+			if newSize == 0 {
+				newSize = bufferSize
+			}
+			buf2 := make([]byte, newSize)
+			copy(buf2, buf)
+			buf = buf2
+		}
+
+		n, err := reader.Read(buf[readToIndex:])
+		readToIndex += n
+
+		if readToIndex > 0 {
+			np, parseErr := req.parse(buf[:readToIndex])
+			if parseErr != nil {
+				return nil, parseErr
+			}
+
+			if np > 0 {
+				readToIndex -= np
+				buf2 := make([]byte, max(bufferSize, readToIndex))
+				copy(buf2, buf[np:np+readToIndex])
+				buf = buf2
+			}
+		}
+
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				req.parseState = done
+				break
+			}
+			return nil, err
+		}
 	}
-	req.RequestLine = reqLine
+
 	return req, nil
 }
 
