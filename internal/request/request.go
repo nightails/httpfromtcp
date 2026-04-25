@@ -91,8 +91,12 @@ func parseRequestLine(line string) (RequestLine, int, error) {
 	if len(parts) != 3 {
 		return RequestLine{}, 0, errors.New("invalid request line")
 	}
+
 	httpVersionParts := strings.Split(parts[2], "/")
 	if len(httpVersionParts) != 2 {
+		return RequestLine{}, 0, errors.New("invalid HTTP version")
+	}
+	if httpVersionParts[0] != "HTTP" {
 		return RequestLine{}, 0, errors.New("invalid HTTP version")
 	}
 
