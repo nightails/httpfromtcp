@@ -1,12 +1,10 @@
 package main
 
 import (
-	"errors"
 	"fmt"
-	"io"
+	"httpfromtcp/internal/request"
 	"log"
 	"net"
-	"strings"
 )
 
 func main() {
@@ -22,44 +20,17 @@ func main() {
 			log.Fatal(err)
 		}
 		fmt.Println("New connection")
-		ch := getLineChannel(conn)
-		for line := range ch {
-			fmt.Printf("%s\n", line)
+		req, err := request.RequestFromReader(conn)
+		if err != nil {
+			log.Fatal(err)
 		}
+
+		fmt.Println("Request line:")
+		fmt.Printf("- Method: %s\n", req.RequestLine.Method)
+		fmt.Printf("- Target: %s\n", req.RequestLine.RequestTarget)
+		fmt.Printf("- Version: %s\n", req.RequestLine.HttpVersion)
+
 		conn.Close()
 		fmt.Println("Connection closed")
 	}
-}
-
-func getLineChannel(f io.ReadCloser) <-chan string {
-	ch := make(chan string)
-	go func() {
-		defer f.Close()
-		defer close(ch)
-
-		currentLine := ""
-		for {
-			buffer := make([]byte, 8)
-			n, err := f.Read(buffer)
-			if err != nil {
-				if currentLine != "" {
-					ch <- currentLine
-					currentLine = ""
-				}
-				if errors.Is(err, io.EOF) {
-					break
-				}
-				fmt.Printf("error: %s\n", err.Error())
-				break
-			}
-			str := string(buffer[:n])
-			parts := strings.Split(str, "\n")
-			for i := 0; i < len(parts)-1; i++ {
-				ch <- currentLine + parts[i]
-				currentLine = ""
-			}
-			currentLine += parts[len(parts)-1]
-		}
-	}()
-	return ch
 }
