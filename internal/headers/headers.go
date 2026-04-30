@@ -36,7 +36,12 @@ func (h Headers) Parse(data []byte) (n int, done bool, err error) {
 		return 0, false, errors.New("invalid header: invalid field name")
 	}
 
-	h[strings.ToLower(key)] = value
+	key = strings.ToLower(key)
+	if existingValue, exists := h[key]; exists {
+		value = existingValue + ", " + value
+	}
+
+	h[key] = value
 
 	return bytesConsumed, false, nil
 }
