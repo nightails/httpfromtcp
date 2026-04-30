@@ -32,14 +32,44 @@ func (h Headers) Parse(data []byte) (n int, done bool, err error) {
 	key := headerText[:colonIndex]
 	value := strings.TrimSpace(headerText[colonIndex+1:])
 
-	if key == "" {
-		return 0, false, errors.New("invalid header: empty key")
-	}
-	if strings.ContainsAny(key, " \t") {
-		return 0, false, errors.New("invalid header: whitespace in key")
+	if !isValidFieldName(key) {
+		return 0, false, errors.New("invalid header: invalid field name")
 	}
 
-	h[key] = value
+	h[strings.ToLower(key)] = value
 
 	return bytesConsumed, false, nil
+}
+
+func isValidFieldName(key string) bool {
+	if key == "" {
+		return false
+	}
+
+	for i := 0; i < len(key); i++ {
+		if !isTokenChar(key[i]) {
+			return false
+		}
+	}
+
+	return true
+}
+
+func isTokenChar(c byte) bool {
+	if c >= 'A' && c <= 'Z' {
+		return true
+	}
+	if c >= 'a' && c <= 'z' {
+		return true
+	}
+	if c >= '0' && c <= '9' {
+		return true
+	}
+
+	switch c {
+	case '!', '#', '$', '%', '&', '\'', '*', '+', '-', '.', '^', '_', '`', '|', '~':
+		return true
+	default:
+		return false
+	}
 }

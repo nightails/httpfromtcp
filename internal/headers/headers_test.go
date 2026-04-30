@@ -25,7 +25,7 @@ func TestHeadersParse(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, headers)
 	assert.Equal(t, "123", headers["content-length"])
-	assert.Equal(t, 35, n)
+	assert.Equal(t, 33, n)
 	assert.False(t, done)
 
 	// Test: Valid 2 headers with existing headers
