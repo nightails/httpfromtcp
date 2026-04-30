@@ -73,4 +73,31 @@ func TestHeadersParse(t *testing.T) {
 	require.Error(t, err)
 	assert.Equal(t, 0, n)
 	assert.False(t, done)
+
+	// Test: Same header key with multiple values
+	headers = NewHeaders()
+	data = []byte("Accept: text/html\r\nAccept: application/json\r\n\r\n")
+
+	n, done, err = headers.Parse(data)
+	require.NoError(t, err)
+	require.NotNil(t, headers)
+	assert.Equal(t, "text/html", headers["accept"])
+	assert.Equal(t, 19, n)
+	assert.False(t, done)
+
+	n, done, err = headers.Parse(data[n:])
+	require.NoError(t, err)
+	require.NotNil(t, headers)
+	assert.Equal(t, "text/html, application/json", headers["accept"])
+	assert.Equal(t, 26, n)
+	assert.False(t, done)
+
+	// Test: Valid done
+	headers = NewHeaders()
+	data = []byte("\r\n")
+	n, done, err = headers.Parse(data)
+	require.NoError(t, err)
+	require.NotNil(t, headers)
+	assert.Equal(t, 2, n)
+	assert.True(t, done)
 }
