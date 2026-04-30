@@ -5,6 +5,8 @@ import (
 	"strings"
 )
 
+const crlf = "\r\n"
+
 type Headers map[string]string
 
 func NewHeaders() Headers {
@@ -12,17 +14,18 @@ func NewHeaders() Headers {
 }
 
 func (h Headers) Parse(data []byte) (n int, done bool, err error) {
-	end := strings.Index(string(data), "\r\n")
-	if end == -1 {
+	crlfIndex := strings.Index(string(data), crlf)
+	if crlfIndex == -1 {
 		// incomplete header, need more data
 		return 0, false, err
 	}
-	if end == 0 {
-		return len("\r\n"), true, nil
+	if crlfIndex == 0 {
+		// The empty line. Headers are done.
+		return len(crlf), true, nil
 	}
 
-	headerText := string(data[:end])
-	bytesConsumed := end + len("\r\n")
+	headerText := string(data[:crlfIndex])
+	bytesConsumed := crlfIndex + len(crlf)
 
 	colonIndex := strings.Index(headerText, ":")
 	if colonIndex == -1 {

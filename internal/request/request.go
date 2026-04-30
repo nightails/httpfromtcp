@@ -53,17 +53,21 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 		n, err := reader.Read(buf[readToIndex:])
 		readToIndex += n
 
-		if readToIndex > 0 {
+		for readToIndex > 0 {
 			np, parseErr := req.parse(buf[:readToIndex])
 			if parseErr != nil {
 				return nil, parseErr
 			}
 
-			if np > 0 {
-				readToIndex -= np
-				buf2 := make([]byte, max(bufferSize, readToIndex))
-				copy(buf2, buf[np:np+readToIndex])
-				buf = buf2
+			if np == 0 {
+				break
+			}
+
+			readToIndex -= np
+			copy(buf, buf[np:np+readToIndex])
+
+			if req.parseState == requestStateDone {
+				break
 			}
 		}
 
