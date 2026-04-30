@@ -2,6 +2,7 @@ package request
 
 import (
 	"errors"
+	"httpfromtcp/internal/headers"
 	"io"
 	"strings"
 	"unicode"
@@ -9,6 +10,7 @@ import (
 
 type Request struct {
 	RequestLine RequestLine
+	Headers     headers.Headers
 	parseState  parseState
 }
 
@@ -21,8 +23,9 @@ type RequestLine struct {
 type parseState int
 
 const (
-	initialized parseState = iota
-	done
+	requestStateInitialize parseState = iota
+	requestStateParsingHeaders
+	requestStateDone
 )
 
 const bufferSize = 1024
@@ -32,10 +35,11 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 	readToIndex := 0
 
 	req := &Request{
-		parseState: initialized,
+		parseState: requestStateInitialize,
+		Headers:    headers.NewHeaders(),
 	}
 
-	for req.parseState != done {
+	for req.parseState != requestStateDone {
 		if readToIndex == len(buf) {
 			newSize := len(buf) * 2
 			if newSize == 0 {
@@ -65,7 +69,9 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 
 		if err != nil {
 			if errors.Is(err, io.EOF) {
-				req.parseState = done
+				if req.parseState != requestStateDone {
+					return nil, errors.New("incomplete request")
+				}
 				break
 			}
 			return nil, err
@@ -118,7 +124,7 @@ func parseRequestLine(line string) (RequestLine, int, error) {
 
 func (r *Request) parse(data []byte) (int, error) {
 	switch r.parseState {
-	case initialized:
+	case requestStateInitialize:
 		reqLine, n, err := parseRequestLine(string(data))
 		if err != nil {
 			return 0, err
@@ -127,9 +133,21 @@ func (r *Request) parse(data []byte) (int, error) {
 			return 0, nil
 		}
 		r.RequestLine = reqLine
-		r.parseState = done
+		r.parseState = requestStateParsingHeaders
 		return n, nil
-	case done:
+	case requestStateParsingHeaders:
+		n, done, err := r.Headers.Parse(data)
+		if err != nil {
+			return 0, err
+		}
+		if n == 0 {
+			return 0, nil
+		}
+		if done {
+			r.parseState = requestStateDone
+		}
+		return n, nil
+	case requestStateDone:
 		return 0, errors.New("request already parsed")
 	default:
 		return 0, errors.New("invalid parse state")
