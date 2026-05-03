@@ -1,6 +1,7 @@
 package main
 
 import (
+	"httpfromtcp/internal/server"
 	"log"
 	"os"
 	"os/signal"
@@ -10,11 +11,11 @@ import (
 const port = 42069
 
 func main() {
-	server, err := server.Serve(port)
+	srv, err := server.Serve(port)
 	if err != nil {
 		log.Fatalf("Error starting server: %v", err)
 	}
-	defer server.Close()
+	defer srv.Close()
 	log.Println("Server started on port", port)
 
 	sigChan := make(chan os.Signal, 1)
