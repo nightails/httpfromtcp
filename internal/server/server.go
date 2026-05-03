@@ -1,9 +1,9 @@
 package server
 
 import (
+	"fmt"
 	"log"
 	"net"
-	"strconv"
 	"sync/atomic"
 )
 
@@ -13,7 +13,7 @@ type Server struct {
 }
 
 func Serve(port int) (*Server, error) {
-	ln, err := net.Listen("tcp", ":"+strconv.Itoa(port))
+	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
 	if err != nil {
 		return nil, err
 	}
@@ -23,10 +23,7 @@ func Serve(port int) (*Server, error) {
 }
 
 func (s *Server) Close() error {
-	if s.closed.Swap(true) {
-		return nil
-	}
-
+	s.closed.Store(true)
 	if s.Listener != nil {
 		return s.Listener.Close()
 	}
@@ -40,8 +37,8 @@ func (s *Server) listen() {
 			if s.closed.Load() {
 				return
 			}
-
-			log.Fatal(err)
+			log.Printf("Error accepting connection: %v", err)
+			continue
 		}
 		go s.handle(conn)
 	}
@@ -60,4 +57,5 @@ func (s *Server) handle(conn net.Conn) {
 		log.Printf("Error writing response: %v", err)
 		return
 	}
+	return
 }
