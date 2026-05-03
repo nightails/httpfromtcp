@@ -1,7 +1,8 @@
 package headers
 
 import (
-	"errors"
+	"bytes"
+	"fmt"
 	"strings"
 )
 
@@ -10,74 +11,62 @@ const crlf = "\r\n"
 type Headers map[string]string
 
 func NewHeaders() Headers {
-	return make(Headers)
+	return map[string]string{}
 }
 
 func (h Headers) Parse(data []byte) (n int, done bool, err error) {
-	crlfIndex := strings.Index(string(data), crlf)
-	if crlfIndex == -1 {
-		// incomplete header, need more data
-		return 0, false, err
-	}
-	if crlfIndex == 0 {
-		// The empty line. Headers are done.
-		return len(crlf), true, nil
-	}
+	// print the data with crlf encoding
 
-	headerText := string(data[:crlfIndex])
-	bytesConsumed := crlfIndex + len(crlf)
-
-	colonIndex := strings.Index(headerText, ":")
-	if colonIndex == -1 {
-		return 0, false, errors.New("invalid header: missing colon")
+	idx := bytes.Index(data, []byte(crlf))
+	if idx == -1 {
+		return 0, false, nil
+	}
+	if idx == 0 {
+		// the empty line
+		// headers are done, consume the CRLF
+		return 2, true, nil
 	}
 
-	key := headerText[:colonIndex]
-	value := strings.TrimSpace(headerText[colonIndex+1:])
+	parts := bytes.SplitN(data[:idx], []byte(":"), 2)
+	key := strings.ToLower(string(parts[0]))
 
-	if !isValidFieldName(key) {
-		return 0, false, errors.New("invalid header: invalid field name")
+	if key != strings.TrimSpace(key) {
+		return 0, false, fmt.Errorf("invalid header name: %s", key)
 	}
 
-	key = strings.ToLower(key)
-	if existingValue, exists := h[key]; exists {
-		value = existingValue + ", " + value
+	value := bytes.TrimSpace(parts[1])
+	key = strings.TrimSpace(key)
+	if !validTokens([]byte(key)) {
+		return 0, false, fmt.Errorf("invalid header token found: %s", key)
 	}
-
-	h[key] = value
-
-	return bytesConsumed, false, nil
+	h.Set(key, string(value))
+	return idx + 2, false, nil
 }
 
-func isValidFieldName(key string) bool {
-	if key == "" {
-		return false
+func (h Headers) Set(key, value string) {
+	key = strings.ToLower(key)
+	v, ok := h[key]
+	if ok {
+		value = strings.Join([]string{
+			v,
+			value,
+		}, ", ")
 	}
+	h[key] = value
+}
 
-	for i := 0; i < len(key); i++ {
-		if !isTokenChar(key[i]) {
+var tokenChars = []byte{'!', '#', '$', '%', '&', '\'', '*', '+', '-', '.', '^', '_', '`', '|', '~'}
+
+// validTokens checks if the data contains only valid tokens
+// or characters that are allowed in a token
+func validTokens(data []byte) bool {
+	for _, c := range data {
+		if !(c >= 'A' && c <= 'Z' ||
+			c >= 'a' && c <= 'z' ||
+			c >= '0' && c <= '9' ||
+			c == '-') {
 			return false
 		}
 	}
-
 	return true
-}
-
-func isTokenChar(c byte) bool {
-	if c >= 'A' && c <= 'Z' {
-		return true
-	}
-	if c >= 'a' && c <= 'z' {
-		return true
-	}
-	if c >= '0' && c <= '9' {
-		return true
-	}
-
-	switch c {
-	case '!', '#', '$', '%', '&', '\'', '*', '+', '-', '.', '^', '_', '`', '|', '~':
-		return true
-	default:
-		return false
-	}
 }

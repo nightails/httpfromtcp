@@ -1,17 +1,19 @@
 package request
 
 import (
+	"bytes"
 	"errors"
+	"fmt"
 	"httpfromtcp/internal/headers"
 	"io"
 	"strings"
-	"unicode"
 )
 
 type Request struct {
 	RequestLine RequestLine
 	Headers     headers.Headers
-	parseState  parseState
+
+	state requestState
 }
 
 type RequestLine struct {
@@ -20,153 +22,145 @@ type RequestLine struct {
 	Method        string
 }
 
-type parseState int
+type requestState int
 
 const (
-	requestStateInitialize parseState = iota
+	requestStateInitialized requestState = iota
 	requestStateParsingHeaders
 	requestStateDone
 )
 
-const bufferSize = 1024
+const crlf = "\r\n"
+const bufferSize = 8
 
 func RequestFromReader(reader io.Reader) (*Request, error) {
-	buf := make([]byte, bufferSize)
+	buf := make([]byte, bufferSize, bufferSize)
 	readToIndex := 0
-
 	req := &Request{
-		parseState: requestStateInitialize,
-		Headers:    headers.NewHeaders(),
+		state:   requestStateInitialized,
+		Headers: headers.NewHeaders(),
 	}
-
-	for req.parseState != requestStateDone {
-		if readToIndex == len(buf) {
-			newSize := len(buf) * 2
-			if newSize == 0 {
-				newSize = bufferSize
-			}
-			buf2 := make([]byte, newSize)
-			copy(buf2, buf)
-			buf = buf2
+	for req.state != requestStateDone {
+		if readToIndex >= len(buf) {
+			newBuf := make([]byte, len(buf)*2)
+			copy(newBuf, buf)
+			buf = newBuf
 		}
 
-		n, err := reader.Read(buf[readToIndex:])
-		readToIndex += n
-
-		for readToIndex > 0 {
-			np, parseErr := req.parse(buf[:readToIndex])
-			if parseErr != nil {
-				return nil, parseErr
-			}
-
-			if np == 0 {
-				break
-			}
-
-			readToIndex -= np
-			copy(buf, buf[np:np+readToIndex])
-
-			if req.parseState == requestStateDone {
-				break
-			}
-		}
-
+		numBytesRead, err := reader.Read(buf[readToIndex:])
 		if err != nil {
 			if errors.Is(err, io.EOF) {
-				if req.parseState != requestStateDone {
-					return nil, errors.New("incomplete request")
+				if req.state != requestStateDone {
+					return nil, fmt.Errorf("incomplete request, in state: %d, read n bytes on EOF: %d", req.state, numBytesRead)
 				}
 				break
 			}
 			return nil, err
 		}
-	}
+		readToIndex += numBytesRead
 
+		numBytesParsed, err := req.parse(buf[:readToIndex])
+		if err != nil {
+			return nil, err
+		}
+
+		copy(buf, buf[numBytesParsed:])
+		readToIndex -= numBytesParsed
+	}
 	return req, nil
 }
 
-// parseRequestLine parses the HTTP request line and returns the request line,
-// the number of bytes it consumed, plus any error.
-func parseRequestLine(line string) (RequestLine, int, error) {
-	end := strings.Index(line, "\r\n")
-	if end == -1 {
-		// Need more data before we can parse the request line
-		return RequestLine{}, 0, nil
+func parseRequestLine(data []byte) (*RequestLine, int, error) {
+	idx := bytes.Index(data, []byte(crlf))
+	if idx == -1 {
+		return nil, 0, nil
 	}
+	requestLineText := string(data[:idx])
+	requestLine, err := requestLineFromString(requestLineText)
+	if err != nil {
+		return nil, 0, err
+	}
+	return requestLine, idx + 2, nil
+}
 
-	requestLineText := line[:end]
-	bytesConsumed := end + len("\r\n")
-
-	parts := strings.Split(requestLineText, " ")
+func requestLineFromString(str string) (*RequestLine, error) {
+	parts := strings.Split(str, " ")
 	if len(parts) != 3 {
-		return RequestLine{}, 0, errors.New("invalid request line")
+		return nil, fmt.Errorf("poorly formatted request-line: %s", str)
 	}
 
-	httpVersionParts := strings.Split(parts[2], "/")
-	if len(httpVersionParts) != 2 {
-		return RequestLine{}, 0, errors.New("invalid HTTP version")
-	}
-	if httpVersionParts[0] != "HTTP" {
-		return RequestLine{}, 0, errors.New("invalid HTTP version")
-	}
-
-	reqLine := RequestLine{
-		HttpVersion:   httpVersionParts[1],
-		RequestTarget: parts[1],
-		Method:        parts[0],
+	method := parts[0]
+	for _, c := range method {
+		if c < 'A' || c > 'Z' {
+			return nil, fmt.Errorf("invalid method: %s", method)
+		}
 	}
 
-	if !isAllCapsLetter(reqLine.Method) {
-		return RequestLine{}, 0, errors.New("invalid method")
-	}
-	if reqLine.HttpVersion != "1.1" {
-		return RequestLine{}, 0, errors.New("invalid HTTP version")
+	requestTarget := parts[1]
+
+	versionParts := strings.Split(parts[2], "/")
+	if len(versionParts) != 2 {
+		return nil, fmt.Errorf("malformed start-line: %s", str)
 	}
 
-	return reqLine, bytesConsumed, nil
+	httpPart := versionParts[0]
+	if httpPart != "HTTP" {
+		return nil, fmt.Errorf("unrecognized HTTP-version: %s", httpPart)
+	}
+	version := versionParts[1]
+	if version != "1.1" {
+		return nil, fmt.Errorf("unrecognized HTTP-version: %s", version)
+	}
+
+	return &RequestLine{
+		Method:        method,
+		RequestTarget: requestTarget,
+		HttpVersion:   versionParts[1],
+	}, nil
 }
 
 func (r *Request) parse(data []byte) (int, error) {
-	switch r.parseState {
-	case requestStateInitialize:
-		reqLine, n, err := parseRequestLine(string(data))
+	totalBytesParsed := 0
+	for r.state != requestStateDone {
+		n, err := r.parseSingle(data[totalBytesParsed:])
 		if err != nil {
 			return 0, err
 		}
+		totalBytesParsed += n
 		if n == 0 {
+			break
+		}
+	}
+	return totalBytesParsed, nil
+}
+
+func (r *Request) parseSingle(data []byte) (int, error) {
+	switch r.state {
+	case requestStateInitialized:
+		requestLine, n, err := parseRequestLine(data)
+		if err != nil {
+			// something actually went wrong
+			return 0, err
+		}
+		if n == 0 {
+			// just need more data
 			return 0, nil
 		}
-		r.RequestLine = reqLine
-		r.parseState = requestStateParsingHeaders
+		r.RequestLine = *requestLine
+		r.state = requestStateParsingHeaders
 		return n, nil
 	case requestStateParsingHeaders:
 		n, done, err := r.Headers.Parse(data)
 		if err != nil {
 			return 0, err
 		}
-		if n == 0 {
-			return 0, nil
-		}
 		if done {
-			r.parseState = requestStateDone
+			r.state = requestStateDone
 		}
 		return n, nil
 	case requestStateDone:
-		return 0, errors.New("request already parsed")
+		return 0, fmt.Errorf("error: trying to read data in a done state")
 	default:
-		return 0, errors.New("invalid parse state")
+		return 0, fmt.Errorf("unknown state")
 	}
-}
-
-// isAllCapsLetter returns true if the string is all capital letters
-func isAllCapsLetter(s string) bool {
-	if s == "" {
-		return false
-	}
-	for _, r := range s {
-		if !unicode.IsLetter(r) || !unicode.IsUpper(r) {
-			return false
-		}
-	}
-	return true
 }
