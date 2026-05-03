@@ -55,6 +55,14 @@ func (h Headers) Set(key, value string) {
 	h[key] = value
 }
 
+func (h Headers) Get(key string) string {
+	v, ok := h[strings.ToLower(key)]
+	if !ok {
+		return ""
+	}
+	return v
+}
+
 var tokenChars = []byte{'!', '#', '$', '%', '&', '\'', '*', '+', '-', '.', '^', '_', '`', '|', '~'}
 
 // validTokens checks if the data contains only valid tokens

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"httpfromtcp/internal/headers"
 	"io"
+	"strconv"
 	"strings"
 )
 
@@ -28,6 +29,7 @@ type requestState int
 const (
 	requestStateInitialized requestState = iota
 	requestStateParsingHeaders
+	requestStateParsingBody
 	requestStateDone
 )
 
@@ -156,9 +158,29 @@ func (r *Request) parseSingle(data []byte) (int, error) {
 			return 0, err
 		}
 		if done {
-			r.state = requestStateDone
+			r.state = requestStateParsingBody
 		}
 		return n, nil
+	case requestStateParsingBody:
+		v := r.Headers.Get("Content-Length")
+		if v == "" {
+			r.state = requestStateDone
+			return 0, nil
+		}
+
+		contentLength, err := strconv.Atoi(v)
+		if err != nil {
+			return 0, err
+		}
+
+		r.Body = append(r.Body, data...)
+		if len(r.Body) > contentLength {
+			return 0, errors.New("body length exceeded content length")
+		}
+		if len(r.Body) == contentLength {
+			r.state = requestStateDone
+		}
+		return len(data), nil
 	case requestStateDone:
 		return 0, fmt.Errorf("error: trying to read data in a done state")
 	default:
