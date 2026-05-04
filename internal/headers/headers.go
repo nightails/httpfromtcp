@@ -80,6 +80,11 @@ func (h Headers) Get(key string) string {
 	return v
 }
 
+// Remove removes the specified key from the Headers map, converting the key to lowercase.
+func (h Headers) Remove(key string) {
+	delete(h, strings.ToLower(key))
+}
+
 var tokenChars = []byte{'!', '#', '$', '%', '&', '\'', '*', '+', '-', '.', '^', '_', '`', '|', '~'}
 
 // validTokens checks if the data contains only valid tokens
