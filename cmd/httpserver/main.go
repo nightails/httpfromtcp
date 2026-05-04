@@ -20,7 +20,7 @@ import (
 const port = 42069
 
 func main() {
-	srv, err := server.Serve(port, myChunkHandler())
+	srv, err := server.Serve(port, myVideoHandler())
 	if err != nil {
 		log.Fatalf("Error starting server: %v", err)
 	}
@@ -33,6 +33,7 @@ func main() {
 	log.Println("Server gracefully stopped")
 }
 
+// myHandler is a simple demo handler that responds with predefined content for specific paths.
 func myHandler() func(w *response.Writer, req *request.Request) {
 	return func(w *response.Writer, req *request.Request) {
 		b := make([]byte, 0)
@@ -82,6 +83,7 @@ func myHandler() func(w *response.Writer, req *request.Request) {
 	}
 }
 
+// myChunkHandler is a demo of how to handle chucked encoding with trailers.
 func myChunkHandler() func(w *response.Writer, req *request.Request) {
 	return func(w *response.Writer, req *request.Request) {
 		// Rerouting /httpbin/html to https://httpbin.org/html
@@ -139,6 +141,38 @@ func myChunkHandler() func(w *response.Writer, req *request.Request) {
 		th.Set("X-Content-SHA256", fmt.Sprintf("%x", hash))
 		th.Set("X-Content-Length", fmt.Sprintf("%d", bodyLen))
 		if err := w.WriteTrailers(th); err != nil {
+			return
+		}
+	}
+}
+
+// myVideoHandler is a demo of how to implement a simple video streaming handler
+func myVideoHandler() func(w *response.Writer, req *request.Request) {
+	return func(w *response.Writer, req *request.Request) {
+		// only respond to GET requests for /video
+		method := req.RequestLine.Method
+		url := req.RequestLine.RequestTarget
+		if method != "GET" || !strings.HasSuffix(url, "/video") {
+			return
+		}
+
+		// read the entire video file into memory for now.
+		data, err := os.ReadFile("assets/vim.mp4")
+		if err != nil {
+			w.WriteStatusLine(response.InternalServerError)
+			return
+		}
+
+		h := headers.GetDefaultHeaders(len(data))
+		h.Set("Content-Type", "video/mp4")
+
+		if err := w.WriteStatusLine(response.OK); err != nil {
+			return
+		}
+		if err := w.WriteHeaders(h); err != nil {
+			return
+		}
+		if _, err := w.WriteBody(data); err != nil {
 			return
 		}
 	}
