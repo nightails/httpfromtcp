@@ -14,6 +14,14 @@ func NewHeaders() Headers {
 	return map[string]string{}
 }
 
+func GetDefaultHeaders(contentLen int) Headers {
+	return Headers{
+		"content-length": fmt.Sprintf("%d", contentLen),
+		"connection":     "close",
+		"content-type":   "text/plain",
+	}
+}
+
 // Parse parses the given data and populates the Headers map with key-value pairs.
 func (h Headers) Parse(data []byte) (n int, done bool, err error) {
 	// print the data with crlf encoding
