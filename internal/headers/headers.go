@@ -14,6 +14,7 @@ func NewHeaders() Headers {
 	return map[string]string{}
 }
 
+// Parse parses the given data and populates the Headers map with key-value pairs.
 func (h Headers) Parse(data []byte) (n int, done bool, err error) {
 	// print the data with crlf encoding
 
@@ -39,11 +40,12 @@ func (h Headers) Parse(data []byte) (n int, done bool, err error) {
 	if !validTokens([]byte(key)) {
 		return 0, false, fmt.Errorf("invalid header token found: %s", key)
 	}
-	h.Set(key, string(value))
+	h.Add(key, string(value))
 	return idx + 2, false, nil
 }
 
-func (h Headers) Set(key, value string) {
+// Add adds or updates a header with the specified key and value. If the key exists, values are concatenated with a comma.
+func (h Headers) Add(key, value string) {
 	key = strings.ToLower(key)
 	v, ok := h[key]
 	if ok {
@@ -55,6 +57,13 @@ func (h Headers) Set(key, value string) {
 	h[key] = value
 }
 
+// Set updates or assigns the specified key and value in the Headers map, converting the key to lowercase.
+func (h Headers) Set(key, value string) {
+	key = strings.ToLower(key)
+	h[key] = value
+}
+
+// Get retrieves the value associated with the specified key in a case-insensitive manner from the Headers map.
 func (h Headers) Get(key string) string {
 	v, ok := h[strings.ToLower(key)]
 	if !ok {
