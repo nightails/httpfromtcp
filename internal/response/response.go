@@ -15,9 +15,29 @@ const (
 	InternalServerError StatusCode = 500
 )
 
-func WriteStatusLine(w io.Writer, statusCode StatusCode) error {
-	if w == nil {
-		return errors.New("writer cannot be nil")
+type WriterState int
+
+const (
+	WriteStatusLineState = iota
+	WriteHeadersState
+	WriteBodyState
+)
+
+type Writer struct {
+	IOWriter io.Writer
+	State    WriterState
+}
+
+func NewWriter(w io.Writer) *Writer {
+	return &Writer{
+		IOWriter: w,
+		State:    WriteStatusLineState,
+	}
+}
+
+func (w *Writer) WriteStatusLine(statusCode StatusCode) error {
+	if w.State != WriteStatusLineState {
+		return errors.New("wrong order, writer is not ready to write status line")
 	}
 	if statusCode < 100 || statusCode >= 600 {
 		return errors.New("invalid status code")
@@ -33,33 +53,39 @@ func WriteStatusLine(w io.Writer, statusCode StatusCode) error {
 		respPhrase = "Internal Server Error"
 	}
 
-	respLine := fmt.Sprintf("HTTP/1.1 %d %s\r\n", statusCode, respPhrase)
-	if _, err := w.Write([]byte(respLine)); err != nil {
+	_, err := w.IOWriter.Write([]byte(fmt.Sprintf("HTTP/1.1 %d %s\r\n", statusCode, respPhrase)))
+	if err != nil {
 		return err
 	}
+	w.State = WriteHeadersState
 	return nil
 }
 
-func GetDefaultHeaders(contentLen int) headers.Headers {
-	return headers.Headers{
-		"Content-Length": fmt.Sprintf("%d", contentLen),
-		"Connection":     "close",
-		"Content-Type":   "text/plain",
-	}
-}
-
-func WriteHeaders(w io.Writer, headers headers.Headers) error {
-	if w == nil {
-		return errors.New("writer cannot be nil")
+func (w *Writer) WriteHeaders(headers headers.Headers) error {
+	if w.State != WriteHeadersState {
+		return errors.New("wrong order, writer is not ready to write headers")
 	}
 	for key, value := range headers {
-		headerLine := fmt.Sprintf("%s: %s\r\n", key, value)
-		if _, err := w.Write([]byte(headerLine)); err != nil {
+		_, err := w.IOWriter.Write([]byte(fmt.Sprintf("%s: %s\r\n", key, value)))
+		if err != nil {
 			return err
 		}
 	}
-	if _, err := w.Write([]byte("\r\n")); err != nil {
+	_, err := w.IOWriter.Write([]byte("\r\n"))
+	if err != nil {
 		return err
 	}
+	w.State = WriteBodyState
 	return nil
+}
+
+func (w *Writer) WriteBody(body []byte) (int, error) {
+	if w.State != WriteBodyState {
+		return 0, errors.New("wrong order, writer is not ready to write body")
+	}
+	_, err := w.IOWriter.Write(body)
+	if err != nil {
+		return 0, err
+	}
+	return len(body), nil
 }
