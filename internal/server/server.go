@@ -81,18 +81,19 @@ func (s *Server) handle(conn net.Conn) {
 
 	req, err := request.RequestFromReader(conn)
 	if err != nil {
-		headers := response.GetDefaultHeaders(0)
-		if err := response.WriteStatusLine(conn, response.BadRequest); err != nil {
-			log.Printf("Error writing bad request response: %v", err)
+		handlerErr := &HandlerError{
+			StatusCode:   400,
+			ErrorMessage: err.Error(),
 		}
-		if err := response.WriteHeaders(conn, headers); err != nil {
-			log.Printf("Error writing bad request headers: %v", err)
+		if err := handlerErr.WriteTo(conn); err != nil {
+			log.Printf("Error writing bad request response: %v", err)
+			return
 		}
 		return
 	}
 
-	var buff bytes.Buffer
-	if handlerErr := s.HandlerFunc(&buff, req); handlerErr != nil {
+	buff := bytes.NewBuffer([]byte{})
+	if handlerErr := s.HandlerFunc(buff, req); handlerErr != nil {
 		if err := handlerErr.WriteTo(conn); err != nil {
 			log.Printf("Error writing response: %v", err)
 			return
@@ -112,5 +113,4 @@ func (s *Server) handle(conn net.Conn) {
 			return
 		}
 	}
-
 }
