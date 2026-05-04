@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"httpfromtcp/internal/headers"
@@ -83,15 +84,17 @@ func myHandler() func(w *response.Writer, req *request.Request) {
 
 func myChunkHandler() func(w *response.Writer, req *request.Request) {
 	return func(w *response.Writer, req *request.Request) {
-		// Rerouting /httpbin/x to https://httpbin.org/x
+		// Rerouting /httpbin/html to https://httpbin.org/html
 		url := req.RequestLine.RequestTarget
-		if !strings.HasPrefix(url, "/httpbin/") {
+		if !strings.HasSuffix(url, "/httpbin/html") {
 			return
 		}
-		url = "https://httpbin.org/" + strings.TrimPrefix(url, "/httpbin/")
+		url = "https://httpbin.org/html"
 
 		h := headers.GetDefaultHeaders(0)
 		h.Set("Transfer-Encoding", "chunked")
+		h.Add("Trailer", "X-Content-SHA256")
+		h.Add("Trailer", "X-Content-Length")
 		h.Remove("Content-Length")
 
 		resp, err := http.Get(url)
@@ -99,18 +102,27 @@ func myChunkHandler() func(w *response.Writer, req *request.Request) {
 			w.WriteStatusLine(response.InternalServerError)
 			return
 		}
+		defer resp.Body.Close()
 
-		w.WriteStatusLine(response.OK)
-		w.WriteHeaders(h)
+		if err := w.WriteStatusLine(response.OK); err != nil {
+			return
+		}
+		if err := w.WriteHeaders(h); err != nil {
+			return
+		}
 
-		buff := make([]byte, 32) // replace it to 1024 after testing
+		var body []byte
+		buff := make([]byte, 1024)
 		for {
 			n, err := resp.Body.Read(buff)
 			if n > 0 {
+				chunk := buff[:n]
+				body = append(body, chunk...)
 				fmt.Printf("Read %d bytes from response body\n", n)
-				if _, err := w.WriteChunkedBody(buff[:n]); err != nil {
+				if _, err := w.WriteChunkedBody(chunk); err != nil {
 					return
 				}
+
 			}
 			if err != nil {
 				if errors.Is(err, io.EOF) {
@@ -119,6 +131,15 @@ func myChunkHandler() func(w *response.Writer, req *request.Request) {
 				return
 			}
 		}
-		w.WriteChunkedBodyDone()
+
+		hash := sha256.Sum256(body)
+		bodyLen := len(body)
+
+		th := headers.Headers{}
+		th.Set("X-Content-SHA256", fmt.Sprintf("%x", hash))
+		th.Set("X-Content-Length", fmt.Sprintf("%d", bodyLen))
+		if err := w.WriteTrailers(th); err != nil {
+			return
+		}
 	}
 }

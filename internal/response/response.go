@@ -121,3 +121,26 @@ func (w *Writer) WriteChunkedBodyDone() (int, error) {
 	}
 	return 0, nil
 }
+
+func (w *Writer) WriteTrailers(h headers.Headers) error {
+	if w.State != WriteBodyState {
+		return errors.New("wrong order, writer is not ready to write trailers")
+	}
+	// chunk ender
+	if _, err := w.IOWriter.Write([]byte("0\r\n")); err != nil {
+		return err
+	}
+
+	// trailer headers
+	for key, value := range h {
+		if _, err := w.IOWriter.Write([]byte(fmt.Sprintf("%s: %s\r\n", key, value))); err != nil {
+			return err
+		}
+	}
+
+	// crlf
+	if _, err := w.IOWriter.Write([]byte("\r\n")); err != nil {
+		return err
+	}
+	return nil
+}
