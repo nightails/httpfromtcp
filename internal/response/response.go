@@ -89,3 +89,35 @@ func (w *Writer) WriteBody(body []byte) (int, error) {
 	}
 	return len(body), nil
 }
+
+func (w *Writer) WriteChunkedBody(p []byte) (int, error) {
+	if w.State != WriteBodyState {
+		return 0, errors.New("wrong order, writer is not ready to write chucked body")
+	}
+	// size of the chunk in hex
+	_, err := w.IOWriter.Write([]byte(fmt.Sprintf("%x\r\n", len(p))))
+	if err != nil {
+		return 0, err
+	}
+	// data of the chunk in given size
+	_, err = w.IOWriter.Write(p)
+	if err != nil {
+		return 0, err
+	}
+	// end of the chunk
+	_, err = w.IOWriter.Write([]byte("\r\n"))
+	if err != nil {
+		return 0, err
+	}
+	return len(p), nil
+}
+
+func (w *Writer) WriteChunkedBodyDone() (int, error) {
+	if w.State != WriteBodyState {
+		return 0, errors.New("wrong order, writer is not ready to write chucked body")
+	}
+	if _, err := w.IOWriter.Write([]byte("0\r\n\r\n")); err != nil {
+		return 0, err
+	}
+	return 0, nil
+}
